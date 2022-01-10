@@ -216,7 +216,16 @@ int16_t LookList::find(int16_t value) {
       VpinTurnout::create(id,pin);
       break;
     }
-      
+
+    case OPCODE_HBRIDGETURNOUT: {
+      VPIN id=operand;
+      VPIN pin1=GET_OPERAND(1);
+      VPIN pin2=GET_OPERAND(2);
+      uint16_t delay=GET_OPERAND(3);
+      HBridgeTurnout::create(id,pin1, pin2, delay);
+      break;
+    }
+
     case OPCODE_ROUTE:
     case OPCODE_AUTOMATION:
     case OPCODE_SEQUENCE:
