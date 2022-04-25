@@ -37,7 +37,7 @@ Stream * WifiInterface::wifiStream;
 
 #ifndef WIFI_AT_CHECK_TIMEOUT
 // Some ESP32 AT firmware versions take time to initialize and do not respond to AT commands right away.
-#define WIFI_AT_CHECK_TIMEOUT 200
+#define WIFI_AT_CHECK_TIMEOUT 2000
 #endif
 
 
