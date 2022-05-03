@@ -54,6 +54,7 @@
 #undef FREE 
 #undef FWD 
 #undef GREEN
+#undef HBRIDGE_TURNOUT
 #undef IF 
 #undef IFCLOSED
 #undef IFGTE
@@ -143,6 +144,7 @@
 #define FREE(blockid) 
 #define FWD(speed) 
 #define GREEN(signal_id)
+#define HBRIDGE_TURNOUT(id,pin1,pin2,dly,description...)
 #define IF(sensor_id) 
 #define IFCLOSED(turnout_id) 
 #define IFGTE(sensor_id,value) 

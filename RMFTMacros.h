@@ -100,6 +100,8 @@ void  RMFT2::printMessage(uint16_t id) {
 #define PIN_TURNOUT(id,pin,description...) case id: desc=F("" description); break;
 #undef SERVO_TURNOUT
 #define SERVO_TURNOUT(id,pin,activeAngle,inactiveAngle,profile,description...) case id: desc=F("" description); break;
+#undef HBRIDGE_TURNOUT
+#define HBRIDGE_TURNOUT(id,pin1,pin2,dly,description...) case id: desc=F("" description); break;
 
 void RMFT2::emitTurnoutDescription(Print* stream,int16_t turnoutid) {
      const FSH * desc=F("");
@@ -213,7 +215,8 @@ const  FLASH  int16_t RMFT2::SignalDefinitions[] = {
 #define ONDEACTIVATEL(linear) OPCODE_ONDEACTIVATE,V(linear+3),
 #define ONTHROW(turnout_id) OPCODE_ONTHROW,V(turnout_id),
 #define PAUSE OPCODE_PAUSE,0,0,
-#define PIN_TURNOUT(id,pin,description...) OPCODE_PINTURNOUT,V(id),OPCODE_PAD,V(pin), 
+#define PIN_TURNOUT(id,pin,description...) OPCODE_PINTURNOUT,V(id),OPCODE_PAD,V(pin),
+#define HBRIDGE_TURNOUT(id,pin1,pin2,dly,description...) OPCODE_HBRIDGETURNOUT,V(id),OPCODE_PAD,V(pin1),OPCODE_PAD,V(pin2),OPCODE_PAD,V(dly),
 #define POM(cv,value) OPCODE_POM,V(cv),OPCODE_PAD,V(value),
 #define POWEROFF OPCODE_POWEROFF,0,0,
 #define PRINT(msg) OPCODE_PRINT,V(__COUNTER__ - StringMacroTracker2),
