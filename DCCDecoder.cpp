@@ -18,7 +18,7 @@
  */
 #ifdef ARDUINO_ARCH_ESP32
 #include "DCCDecoder.h"
-#include "LocoTable.h"
+#include "LocoSlot.h"
 #include "DCCEXParser.h"
 #include "DIAG.h"
 #include "DCC.h"
@@ -37,13 +37,18 @@ bool DCCDecoder::parse(DCCPacket &p) {
   if (d[0] ==  0B11111111) {  // Idle packet
     return false;
   }
+  // do not bother with packets that are too short
+  // or too long anyway
+  if (p.len() < 3 || p.len() > 6) {
+    return false;
+  }
   // CRC verification here
   byte checksum = 0;
   for (byte n = 0; n < p.len(); n++)
     checksum ^= d[n];
   if (checksum) {  // Result should be zero, if not it's an error!
     if (Diag::SNIFFER) {
-      DIAG(F("Checksum error"));
+      DIAG(F("Checksum error:"));
       p.print();
     }
     return false;
@@ -72,10 +77,13 @@ bool DCCDecoder::parse(DCCPacket &p) {
     }
   }
   if (decoderType == DECODER_MOBILE) {
+    if (addr == 0) { // do not care about loco addr 0 broadcasts
+      return false;
+    }
     switch (instr[0] & 0xE0) {
     case 0x20: // 001x-xxxx Extended commands
       if (instr[0] == 0B00111111) { // 128 speed steps
-	if ((locoInfoChanged = LocoTable::updateLoco(addr, instr[1])) == true) {
+	if ((locoInfoChanged = updateLoco(addr, instr[1])) == true) {
 	  byte speed = instr[1] & 0B01111111;
 	  byte direction = instr[1] & 0B10000000;
 	  DCC::setThrottle(addr, speed, direction);
@@ -86,7 +94,7 @@ bool DCCDecoder::parse(DCCPacket &p) {
       break;
     case 0x40: // 010x-xxxx 28 (or 14 step) speed we assume 28
     case 0x60: // 011x-xxxx
-      if ((locoInfoChanged = LocoTable::updateLoco(addr, instr[0] & 0B00111111)) == true) {
+      if ((locoInfoChanged = updateLoco(addr, instr[0] & 0B00111111)) == true) {
 	byte speed = instr[0] & 0B00001111; // first only look at 4 bits
 	if (speed > 1) {               // neither stop nor emergency stop, recalculate speed
 	  speed = ((instr[0] & 0B00001111) << 1) + bitRead(instr[0], 4); // reshuffle bits
@@ -97,7 +105,7 @@ bool DCCDecoder::parse(DCCPacket &p) {
       }
       break;
     case 0x80: // 100x-xxxx Function group 1
-      if ((locoInfoChanged = LocoTable::updateFunc(addr, instr[0], 1)) == true) {
+      if ((locoInfoChanged = updateFunc(addr, instr[0], 1)) == true) {
 	byte normalized = (instr[0] << 1 & 0x1e) | (instr[0] >> 4 & 0x01);
 	DCCEXParser::funcmap(addr, normalized, 0, 4);
       }
@@ -112,7 +120,7 @@ bool DCCDecoder::parse(DCCPacket &p) {
 	low = 9;
 	high = 12;
       }
-      if ((locoInfoChanged = LocoTable::updateFunc(addr, instr[0], low)) == true) {
+      if ((locoInfoChanged = updateFunc(addr, instr[0], low)) == true) {
 	DCCEXParser::funcmap(addr, instr[0], low, high);
       }
     }
@@ -120,19 +128,21 @@ bool DCCDecoder::parse(DCCPacket &p) {
     case 0xC0: // 110x-xxxx Extended (here are functions F13 and up
       switch (instr[0] & 0B00011111) {
       case 0B00011110:  // F13-F20 Function Control
-	if ((locoInfoChanged = LocoTable::updateFunc(addr, instr[0], 13)) == true) {
-	  DCCEXParser::funcmap(addr, instr[1], 13, 20);
+	if ((locoInfoChanged = updateFunc(addr, instr[1], 13)) == true) {
+	  DCCEXParser::funcmap(addr, instr[1], 13, 16);
 	}
-	if ((locoInfoChanged = LocoTable::updateFunc(addr, instr[0], 17)) == true) {
-	  DCCEXParser::funcmap(addr, instr[1], 13, 20);
+        // updateFunc handles only the 4 low bits as that is the most common case
+	if ((locoInfoChanged = updateFunc(addr, instr[1]>>4, 17)) == true) {
+	  DCCEXParser::funcmap(addr, instr[1]>>4, 17, 20); // adjust instr[1] to align with pos 17
 	}
       break;
       case 0B00011111:  // F21-F28 Function Control
-	if ((locoInfoChanged = LocoTable::updateFunc(addr, instr[1], 21)) == true) {
-	  DCCEXParser::funcmap(addr, instr[1], 21, 28);
-	}  // updateFunc handles only the 4 low bits as that is the most common case
-	if ((locoInfoChanged = LocoTable::updateFunc(addr, instr[1]>>4, 25)) == true) {
-	  DCCEXParser::funcmap(addr, instr[1], 21, 28);
+	if ((locoInfoChanged = updateFunc(addr, instr[1], 21)) == true) {
+	  DCCEXParser::funcmap(addr, instr[1], 21, 24);
+	}
+        // updateFunc handles only the 4 low bits as that is the most common case
+	if ((locoInfoChanged = updateFunc(addr, instr[1]>>4, 25)) == true) {
+	  DCCEXParser::funcmap(addr, instr[1]>>4, 25, 28); // adjust instr[1] to align with pos 25
 	}
 	break;
 	/* do that later
@@ -160,10 +170,20 @@ bool DCCDecoder::parse(DCCPacket &p) {
 	byte port = (instr[0] & 0B00000110) >> 1;
 	byte activate = (instr[0] & 0B00001000) >> 3;
 	byte coil = (instr[0] & 0B00000001);
-	locoInfoChanged = true;
-	//(void)addr; (void)port; (void)coil; (void)activate;
-	//DIAG(F("HL=%d LL=%d C=%d A=%d"), addr, port, coil, activate);
-	DCC::setAccessory(addr, port, coil, activate);
+	// all accessory PoM packets are of length 6 and otherwise identical to the ordinary accessory packets
+	// which are of length 3. According to RCN 214 this is the only difference, so we need to filter
+	if (p.len() == 3) {
+	  locoInfoChanged = true;
+	  //DIAG(F("HL=%d LL=%d C=%d A=%d"), addr, port, coil, activate);
+	  DCC::setAccessory(addr, port, coil, activate);
+	}
+#ifdef DEBUG_POM_ACC
+	if (p.len() == 6) {
+	  uint16_t cv = ((d[2] & 0B00000011) << 8) + d[3] + 1;
+	  uint16_t val = d[4];
+	  DIAG(F("Accessory POM: HL=%d LL=%d LIN=%d C=0=%d A=1=%d CV=%d VAL=%d"), addr, port, (addr-1)*4 + port + 1, coil, activate, cv, val);
+	}
+#endif //DEBUG_POM_ACC
       } else { // Accessory Extended NMRA spec, do we need to decode this?
 	/*
 	addr = (addr << 5) +
@@ -175,4 +195,38 @@ bool DCCDecoder::parse(DCCPacket &p) {
   }
   return false;
 }
+
+// returns false only if loco existed but nothing was changed
+bool DCCDecoder::updateLoco(uint16_t loco, byte speedCode) {
+  if (loco==0) return true; // its a broadcast
+  
+  // determine speed reg for this loco
+  auto slot=LocoSlot::getSlot(loco, true);
+  if (speedCode == slot->getSnifferSpeedCode()) {
+    return false; // nothing changed
+  }
+
+  slot->setSnifferSpeedCode(speedCode);
+  return true; // loco speed changed
+  
+}
+
+bool DCCDecoder::updateFunc(uint16_t loco, byte func, int shift) {
+  unsigned long previous;
+  unsigned long newfunc;
+  auto slot= LocoSlot::getSlot(loco, true);
+  previous=slot->getSnifferFunctions();
+  newfunc=previous;
+  if(shift == 1) { // special case for light
+    newfunc &= ~1UL;
+    newfunc |= ((func & 0B10000) >> 4);
+  }
+  newfunc &= ~(0B1111UL << shift);
+  newfunc |=  ((func & 0B1111) << shift);
+
+  if (newfunc == previous) return false; // nothing changed
+  slot->setSnifferFunctions(newfunc);
+  return true;
+}
+
 #endif // ARDUINO_ARCH_ESP32

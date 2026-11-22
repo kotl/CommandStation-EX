@@ -460,6 +460,7 @@ void MotorDriver::throttleInrush(bool on) {
   if(on){
     DCCTimer::DCCEXanalogWriteFrequency(brakePin, 7); // 7 means max
   }
+  DCCWaveform::pauseRailcom(on);
   analogWrite(brakePin,duty);
 #endif
 }
